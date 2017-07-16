@@ -1,6 +1,6 @@
 ##############################################################################
 BUILD = build
-BIN = cdc_acm
+BIN = vcp
 
 ##############################################################################
 .PHONY: all directory clean size
@@ -15,12 +15,10 @@ CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -funsigned-char -funsigned-bitfields
 CFLAGS += -mcpu=cortex-m0plus -mthumb
 CFLAGS += -MD -MP -MT $(BUILD)/$(*F).o -MF $(BUILD)/$(@F).d
-#CFLAGS += -nostdlib
 
 LDFLAGS += -mcpu=cortex-m0plus -mthumb
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += -Wl,--script=../linker/samd11d14.ld
-#LDFLAGS += -nostdlib
 
 INCLUDES += \
   -I../include \
