@@ -33,7 +33,7 @@
 #include "usb_descriptors.h"
 
 /*- Variables ---------------------------------------------------------------*/
-alignas(4) usb_device_descriptor_t usb_device_descriptor =
+const alignas(4) usb_device_descriptor_t usb_device_descriptor =
 {
   .bLength            = sizeof(usb_device_descriptor_t),
   .bDescriptorType    = USB_DEVICE_DESCRIPTOR,
@@ -47,11 +47,11 @@ alignas(4) usb_device_descriptor_t usb_device_descriptor =
   .bcdDevice          = 0x0100,
   .iManufacturer      = USB_STR_MANUFACTURER,
   .iProduct           = USB_STR_PRODUCT,
-  .iSerialNumber      = 0,
+  .iSerialNumber      = USB_STR_SERIAL_NUMBER,
   .bNumConfigurations = 1,
 };
 
-alignas(4) usb_configuration_hierarchy_t usb_configuration_hierarchy =
+const alignas(4) usb_configuration_hierarchy_t usb_configuration_hierarchy =
 {
   .configuration =
   {
@@ -156,17 +156,20 @@ alignas(4) usb_configuration_hierarchy_t usb_configuration_hierarchy =
   },
 };
 
-alignas(4) usb_string_descriptor_zero_t usb_string_descriptor_zero =
+const alignas(4) usb_string_descriptor_zero_t usb_string_descriptor_zero =
 {
   .bLength               = sizeof(usb_string_descriptor_zero_t),
   .bDescriptorType       = USB_STRING_DESCRIPTOR,
   .wLANGID               = 0x0409, // English (United States)
 };
 
-char *usb_strings[] =
+char usb_serial_number[16];
+
+const char *usb_strings[] =
 {
   [USB_STR_MANUFACTURER]  = "Alex Taradov",
   [USB_STR_PRODUCT]       = "Virtual COM-Port",
+  [USB_STR_SERIAL_NUMBER] = usb_serial_number,
 };
 
 alignas(4) uint8_t usb_string_descriptor_buffer[64];

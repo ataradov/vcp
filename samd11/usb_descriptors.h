@@ -40,6 +40,7 @@ enum
   USB_STR_ZERO,
   USB_STR_MANUFACTURER,
   USB_STR_PRODUCT,
+  USB_STR_SERIAL_NUMBER,
   USB_STR_COUNT,
 };
 
@@ -66,11 +67,11 @@ typedef struct PACK
 } usb_configuration_hierarchy_t;
 
 //-----------------------------------------------------------------------------
-extern usb_device_descriptor_t usb_device_descriptor;
-extern usb_configuration_hierarchy_t usb_configuration_hierarchy;
-extern uint8_t usb_hid_report_descriptor[33];
-extern usb_string_descriptor_zero_t usb_string_descriptor_zero;
-extern char *usb_strings[];
+extern const usb_device_descriptor_t usb_device_descriptor;
+extern const usb_configuration_hierarchy_t usb_configuration_hierarchy;
+extern const usb_string_descriptor_zero_t usb_string_descriptor_zero;
+extern const char *usb_strings[];
+extern char usb_serial_number[16];
 extern uint8_t usb_string_descriptor_buffer[64];
 
 #endif // _USB_DESCRIPTORS_H_

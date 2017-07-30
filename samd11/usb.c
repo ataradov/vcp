@@ -307,6 +307,31 @@ void usb_control_stall(void)
 //-----------------------------------------------------------------------------
 void usb_control_send(uint8_t *data, int size)
 {
+  // USB controller does not have access to the flash memory, so here we do
+  // a manual multi-packet transfer. This way data can be located in in
+  // the flash memory (big constant descriptors).
+
+  while (size)
+  {
+    int transfer_size = LIMIT(size, usb_device_descriptor.bMaxPacketSize0);
+
+    for (int i = 0; i < transfer_size; i++)
+      usb_ctrl_in_buf[i] = data[i];
+
+    udc_mem[0].in.ADDR.reg = (uint32_t)usb_ctrl_in_buf;
+    udc_mem[0].in.PCKSIZE.bit.BYTE_COUNT = transfer_size;
+    udc_mem[0].in.PCKSIZE.bit.MULTI_PACKET_SIZE = 0;
+
+    USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT1;
+    USB->DEVICE.DeviceEndpoint[0].EPSTATUSSET.bit.BK1RDY = 1;
+
+    while (0 == USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.TRCPT1);
+
+    size -= transfer_size;
+    data += transfer_size;
+  }
+
+/*
   if (size <= usb_device_descriptor.bMaxPacketSize0)
   {
     // Small payloads may be unaligned, so copy them into an aligned buffer
@@ -328,6 +353,7 @@ void usb_control_send(uint8_t *data, int size)
   USB->DEVICE.DeviceEndpoint[0].EPSTATUSSET.bit.BK1RDY = 1;
 
   while (0 == USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.TRCPT1);
+*/
 }
 
 //-----------------------------------------------------------------------------

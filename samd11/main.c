@@ -68,6 +68,7 @@ static int app_status_timeout = 0;
 static void sys_init(void)
 {
   uint32_t coarse, fine;
+  uint32_t sn = 0;
 
   NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CACHEDIS | NVMCTRL_CTRLB_RWS(2);
 
@@ -91,6 +92,16 @@ static void sys_init(void)
   GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(0) | GCLK_GENCTRL_SRC(GCLK_SOURCE_DFLL48M) |
       GCLK_GENCTRL_RUNSTDBY | GCLK_GENCTRL_GENEN;
   while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
+
+  sn ^= *(volatile uint32_t *)0x0080a00c;
+  sn ^= *(volatile uint32_t *)0x0080a040;
+  sn ^= *(volatile uint32_t *)0x0080a044;
+  sn ^= *(volatile uint32_t *)0x0080a048;
+
+  for (int i = 0; i < 8; i++)
+    usb_serial_number[i] = "0123456789ABCDEF"[(sn >> (i * 4)) & 0xf];
+
+  usb_serial_number[9] = 0;
 }
 
 //-----------------------------------------------------------------------------
