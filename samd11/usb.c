@@ -330,30 +330,6 @@ void usb_control_send(uint8_t *data, int size)
     size -= transfer_size;
     data += transfer_size;
   }
-
-/*
-  if (size <= usb_device_descriptor.bMaxPacketSize0)
-  {
-    // Small payloads may be unaligned, so copy them into an aligned buffer
-    for (int i = 0; i < size; i++)
-      usb_ctrl_in_buf[i] = data[i];
-
-    udc_mem[0].in.ADDR.reg = (uint32_t)usb_ctrl_in_buf;
-  }
-  else
-  {
-    // Large payloads must be aligned
-    udc_mem[0].in.ADDR.reg = (uint32_t)data;
-  }
-
-  udc_mem[0].in.PCKSIZE.bit.BYTE_COUNT = size;
-  udc_mem[0].in.PCKSIZE.bit.MULTI_PACKET_SIZE = 0;
-
-  USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT1;
-  USB->DEVICE.DeviceEndpoint[0].EPSTATUSSET.bit.BK1RDY = 1;
-
-  while (0 == USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.TRCPT1);
-*/
 }
 
 //-----------------------------------------------------------------------------
