@@ -204,7 +204,7 @@ typedef struct PACK
 /*- Prototypes --------------------------------------------------------------*/
 void usb_init(void);
 void usb_set_callback(int ep, void (*callback)(int size));
-void usb_handle_standard_request(usb_request_t *request);
+bool usb_handle_standard_request(usb_request_t *request);
 void usb_send_callback(int ep);
 void usb_recv_callback(int ep, int size);
 

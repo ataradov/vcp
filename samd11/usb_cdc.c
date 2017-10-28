@@ -154,14 +154,12 @@ static void usb_cdc_ep_recv_callback(int size)
 //-----------------------------------------------------------------------------
 static void usb_cdc_set_line_coding_handler(uint8_t *data, int size)
 {
-  usb_cdc_set_line_coding_t *slc = (usb_cdc_set_line_coding_t *)data;
+  usb_cdc_line_coding_t *line_coding = (usb_cdc_line_coding_t *)data;
 
-  usb_control_send_zlp();
-
-  if (sizeof(usb_cdc_set_line_coding_t) != size)
+  if (sizeof(usb_cdc_line_coding_t) != size)
     return;
 
-  usb_cdc_line_coding = slc->line_coding;
+  usb_cdc_line_coding = *line_coding;
 
   usb_cdc_line_coding_updated(&usb_cdc_line_coding);
 }

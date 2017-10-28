@@ -32,7 +32,6 @@
 #include "utils.h"
 #include "usb.h"
 #include "usb_std.h"
-#include "usb_cdc.h"
 #include "usb_descriptors.h"
 
 /*- Types -------------------------------------------------------------------*/
@@ -66,7 +65,7 @@ WEAK bool usb_class_handle_request(usb_request_t *request)
 }
 
 //-----------------------------------------------------------------------------
-void usb_handle_standard_request(usb_request_t *request)
+bool usb_handle_standard_request(usb_request_t *request)
 {
   static int usb_config = 0;
 
@@ -118,12 +117,14 @@ void usb_handle_standard_request(usb_request_t *request)
         }
         else
         {
-          usb_control_stall();
+          return false;
         }
       }
       else
-        usb_control_stall();
-    }  break;
+      {
+        return false;
+      }
+    } break;
 
     case USB_CMD(OUT, DEVICE, STANDARD, SET_ADDRESS):
     {
@@ -181,13 +182,13 @@ void usb_handle_standard_request(usb_request_t *request)
       }
       else
       {
-        usb_control_stall();
+        return false;
       }
     } break;
 
     case USB_CMD(OUT, DEVICE, STANDARD, SET_FEATURE):
     {
-      usb_control_stall();
+      return false;
     } break;
 
     case USB_CMD(OUT, INTERFACE, STANDARD, SET_FEATURE):
@@ -207,13 +208,13 @@ void usb_handle_standard_request(usb_request_t *request)
       }
       else
       {
-        usb_control_stall();
+        return false;
       }
     } break;
 
     case USB_CMD(OUT, DEVICE, STANDARD, CLEAR_FEATURE):
     {
-      usb_control_stall();
+      return false;
     } break;
 
     case USB_CMD(OUT, INTERFACE, STANDARD, CLEAR_FEATURE):
@@ -233,16 +234,18 @@ void usb_handle_standard_request(usb_request_t *request)
       }
       else
       {
-        usb_control_stall();
+        return false;
       }
     } break;
 
     default:
     {
       if (!usb_class_handle_request(request))
-        usb_control_stall();
+        return false;
     } break;
   }
+
+  return true;
 }
 
 //-----------------------------------------------------------------------------

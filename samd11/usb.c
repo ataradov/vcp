@@ -367,50 +367,66 @@ void usb_task(void)
     udc_mem[0].out.PCKSIZE.bit.MULTI_PACKET_SIZE = 64;
     udc_mem[0].out.PCKSIZE.bit.BYTE_COUNT = 0;
 
-    USB->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.bit.BK0RDY = 1;
-
     USB->DEVICE.DeviceEndpoint[0].EPINTENSET.bit.RXSTP = 1;
     USB->DEVICE.DeviceEndpoint[0].EPINTENSET.bit.TRCPT0 = 1;
   }
 
   if (USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.RXSTP)
   {
+    usb_request_t *request = (usb_request_t *)usb_ctrl_out_buf;
+
+    if (sizeof(usb_request_t) == udc_mem[0].out.PCKSIZE.bit.BYTE_COUNT)
+    {
+      if (usb_handle_standard_request(request))
+      {
+        udc_mem[0].out.PCKSIZE.bit.BYTE_COUNT = 0;
+        USB->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.bit.BK0RDY = 1;
+        USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT0;
+      }
+      else
+      {
+        usb_control_stall();
+      }
+    }
+    else
+    {
+      usb_control_stall();
+    }
+
     USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_RXSTP;
-    USB->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.bit.BK0RDY = 1;
-
-    usb_handle_standard_request((usb_request_t *)usb_ctrl_out_buf);
   }
-  else if (USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.TRCPT0) // TODO: Combine with code below ?
+  else if (USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.bit.TRCPT0)
   {
-    USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT0;
-    USB->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.bit.BK0RDY = 1;
-
     if (usb_control_recv_callback)
     {
       usb_control_recv_callback(usb_ctrl_out_buf, udc_mem[0].out.PCKSIZE.bit.BYTE_COUNT);
       usb_control_recv_callback = NULL;
+      usb_control_send_zlp();
     }
+
+    USB->DEVICE.DeviceEndpoint[0].EPSTATUSSET.bit.BK0RDY = 1;
+    USB->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT0;
   }
 
   epints = USB->DEVICE.EPINTSMRY.reg;
 
-  for (int i = 0; i < USB_EPT_NUM && epints > 0; i++)
+  for (int i = 1; i < USB_EPT_NUM && epints > 0; i++)
   {
     flags = USB->DEVICE.DeviceEndpoint[i].EPINTFLAG.reg;
     epints &= ~(1 << i);
 
     if (flags & USB_DEVICE_EPINTFLAG_TRCPT0)
     {
-      USB->DEVICE.DeviceEndpoint[i].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT0;
       USB->DEVICE.DeviceEndpoint[i].EPSTATUSSET.bit.BK0RDY = 1;
+      USB->DEVICE.DeviceEndpoint[i].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT0;
   
       usb_recv_callback(i, udc_mem[i].out.PCKSIZE.bit.BYTE_COUNT);
     }
 
     if (flags & USB_DEVICE_EPINTFLAG_TRCPT1)
     {
-      USB->DEVICE.DeviceEndpoint[i].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT1;
       USB->DEVICE.DeviceEndpoint[i].EPSTATUSCLR.bit.BK1RDY = 1;
+      USB->DEVICE.DeviceEndpoint[i].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT1;
 
       usb_send_callback(i);
     }

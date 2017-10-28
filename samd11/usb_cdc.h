@@ -210,12 +210,6 @@ typedef struct PACK
 typedef struct PACK
 {
   usb_request_t request;
-  usb_cdc_line_coding_t line_coding;
-} usb_cdc_set_line_coding_t;
-
-typedef struct PACK
-{
-  usb_request_t request;
   uint16_t      value;
 } usb_cdc_notify_serial_state_t;
 
