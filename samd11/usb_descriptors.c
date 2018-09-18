@@ -172,5 +172,3 @@ const char *usb_strings[] =
   [USB_STR_SERIAL_NUMBER] = usb_serial_number,
 };
 
-alignas(4) uint8_t usb_string_descriptor_buffer[64];
-
