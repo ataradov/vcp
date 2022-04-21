@@ -1,7 +1,7 @@
 /**
  * \file
  *
- * \brief Top header file for SAMD11
+ * \brief Instance description for PTC
  *
  * Copyright (c) 2018 Microchip Technology Inc.
  *
@@ -27,24 +27,10 @@
  *
  */
 
-#ifndef _SAMD11_
-#define _SAMD11_
+#ifndef _SAMD11_PTC_INSTANCE_
+#define _SAMD11_PTC_INSTANCE_
 
-/**
- * \defgroup SAMD11_definitions SAMD11 Device Definitions
- * \brief SAMD11 CMSIS Definitions.
- */
+/* ========== Instance parameters for PTC peripheral ========== */
+#define PTC_GCLK_ID                 23       // Index of Generic Clock
 
-#if   defined(__SAMD11C14A__) || defined(__ATSAMD11C14A__)
-  #include "samd11c14a.h"
-#elif defined(__SAMD11D14AM__) || defined(__ATSAMD11D14AM__)
-  #include "samd11d14am.h"
-#elif defined(__SAMD11D14AS__) || defined(__ATSAMD11D14AS__)
-  #include "samd11d14as.h"
-#elif defined(__SAMD11D14AU__) || defined(__ATSAMD11D14AU__)
-  #include "samd11d14au.h"
-#else
-  #error Library does not support the specified device.
-#endif
-
-#endif /* _SAMD11_ */
+#endif /* _SAMD11_PTC_INSTANCE_ */

@@ -1,30 +1,5 @@
-/*
- * Copyright (c) 2017, Alex Taradov <alex@taradov.com>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2017-2022, Alex Taradov <alex@taradov.com>. All rights reserved.
 
 /*- Includes ----------------------------------------------------------------*/
 #include <stdlib.h>
@@ -33,7 +8,7 @@
 #include <stdalign.h>
 #include <string.h>
 #include "samd11.h"
-#include "hal_gpio.h"
+#include "hal_config.h"
 #include "nvm_data.h"
 #include "usb.h"
 #include "uart.h"
@@ -41,15 +16,12 @@
 /*- Definitions -------------------------------------------------------------*/
 #define USB_BUFFER_SIZE        64
 #define UART_WAIT_TIMEOUT      10 // ms
-
-// NOTE: Set both rising and falling edge times to 0 to disable edge detection.
-HAL_GPIO_PIN(STATUS,           A, 9);
-#define STATUS_INACTIVE_STATE  0 // 0 - Low, 1 - High, 2 - Hi-Z
-#define STATUS_ACTIVE_STATE    1 // 0 - Low, 1 - High, 2 - Hi-Z
-#define STATUS_RISING_EDGE     0 // ms
-#define STATUS_FALLING_EDGE    0 // ms
+#define STATUS_TIMEOUT         250 // ms
 
 /*- Variables ---------------------------------------------------------------*/
+static uint64_t app_system_time = 0;
+static uint64_t app_status_timeout = 0;
+
 static alignas(4) uint8_t app_recv_buffer[USB_BUFFER_SIZE];
 static alignas(4) uint8_t app_send_buffer[USB_BUFFER_SIZE];
 static int app_recv_buffer_size = 0;
@@ -57,10 +29,10 @@ static int app_recv_buffer_ptr = 0;
 static int app_send_buffer_ptr = 0;
 static bool app_send_buffer_free = true;
 static bool app_send_zlp = false;
-static int app_system_time = 0;
-static int app_uart_timeout = 0;
-static bool app_status = false;
-static int app_status_timeout = 0;
+static uint64_t app_uart_timeout = 0;
+static uint64_t app_break_timeout = 0;
+static bool app_vcp_event = false;
+static bool app_vcp_open = false;
 
 /*- Implementations ---------------------------------------------------------*/
 
@@ -68,9 +40,8 @@ static int app_status_timeout = 0;
 static void sys_init(void)
 {
   uint32_t coarse, fine;
-  uint32_t sn = 0;
 
-  NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CACHEDIS | NVMCTRL_CTRLB_RWS(2);
+  NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_RWS(1);
 
   SYSCTRL->INTFLAG.reg = SYSCTRL_INTFLAG_BOD33RDY | SYSCTRL_INTFLAG_BOD33DET |
       SYSCTRL_INTFLAG_DFLLRDY;
@@ -92,11 +63,22 @@ static void sys_init(void)
   GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(0) | GCLK_GENCTRL_SRC(GCLK_SOURCE_DFLL48M) |
       GCLK_GENCTRL_RUNSTDBY | GCLK_GENCTRL_GENEN;
   while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
+}
 
-  sn ^= *(volatile uint32_t *)0x0080a00c;
-  sn ^= *(volatile uint32_t *)0x0080a040;
-  sn ^= *(volatile uint32_t *)0x0080a044;
-  sn ^= *(volatile uint32_t *)0x0080a048;
+//-----------------------------------------------------------------------------
+static void serial_number_init(void)
+{
+  uint32_t wuid[4];
+  uint8_t *uid = (uint8_t *)wuid;
+  uint32_t sn = 5381;
+
+  wuid[0] = *(volatile uint32_t *)0x0080a00c;
+  wuid[1] = *(volatile uint32_t *)0x0080a040;
+  wuid[2] = *(volatile uint32_t *)0x0080a044;
+  wuid[3] = *(volatile uint32_t *)0x0080a048;
+
+  for (int i = 0; i < 16; i++)
+    sn = ((sn << 5) + sn) ^ uid[i];
 
   for (int i = 0; i < 8; i++)
     usb_serial_number[i] = "0123456789ABCDEF"[(sn >> (i * 4)) & 0xf];
@@ -107,7 +89,7 @@ static void sys_init(void)
 //-----------------------------------------------------------------------------
 static void sys_time_init(void)
 {
-  SysTick->VAL = 0;
+  SysTick->VAL  = 0;
   SysTick->LOAD = F_CPU / 1000ul;
   SysTick->CTRL = SysTick_CTRL_ENABLE_Msk;
   app_system_time = 0;
@@ -121,80 +103,20 @@ static void sys_time_task(void)
 }
 
 //-----------------------------------------------------------------------------
-static int get_system_time(void)
+static void tx_task(void)
 {
-  return app_system_time;
-}
-
-//-----------------------------------------------------------------------------
-static void set_status_state(bool active)
-{
-  if (active)
+  while (app_recv_buffer_size)
   {
-  #if STATUS_ACTIVE_STATE == 0
-    HAL_GPIO_STATUS_out();
-    HAL_GPIO_STATUS_clr();
-  #elif STATUS_ACTIVE_STATE == 1
-    HAL_GPIO_STATUS_out();
-    HAL_GPIO_STATUS_set();
-  #else
-    HAL_GPIO_STATUS_in();
-  #endif
+    if (!uart_write_byte(app_recv_buffer[app_recv_buffer_ptr]))
+      break;
+
+    app_recv_buffer_ptr++;
+    app_recv_buffer_size--;
+    app_vcp_event = true;
+
+    if (0 == app_recv_buffer_size)
+      usb_cdc_recv(app_recv_buffer, sizeof(app_recv_buffer));
   }
-  else
-  {
-  #if STATUS_INACTIVE_STATE == 0
-    HAL_GPIO_STATUS_out();
-    HAL_GPIO_STATUS_clr();
-  #elif STATUS_INACTIVE_STATE == 1
-    HAL_GPIO_STATUS_out();
-    HAL_GPIO_STATUS_set();
-  #else
-    HAL_GPIO_STATUS_in();
-  #endif
-  }
-}
-
-//-----------------------------------------------------------------------------
-static void update_status(bool status)
-{
-#if STATUS_RISING_EDGE > 0
-  if (false == app_status && true == status)
-  {
-    set_status_state(true);
-    app_status_timeout = get_system_time() + STATUS_RISING_EDGE;
-  }
-#endif
-
-#if STATUS_FALLING_EDGE > 0
-  if (true == app_status && false == status)
-  {
-    set_status_state(true);
-    app_status_timeout = get_system_time() + STATUS_FALLING_EDGE;
-  }
-#endif
-
-#if STATUS_RISING_EDGE == 0 && STATUS_FALLING_EDGE == 0
-  set_status_state(status);
-#endif
-
-  app_status = status;
-}
-
-//-----------------------------------------------------------------------------
-static void status_task(void)
-{
-  if (app_status_timeout && get_system_time() > app_status_timeout)
-  {
-    set_status_state(false);
-    app_status_timeout = 0;
-  }
-}
-
-//-----------------------------------------------------------------------------
-void usb_cdc_send_callback(void)
-{
-  app_send_buffer_free = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -209,18 +131,57 @@ static void send_buffer(void)
 }
 
 //-----------------------------------------------------------------------------
-void usb_cdc_recv_callback(int size)
+static void rx_task(void)
 {
-  app_recv_buffer_ptr = 0;
-  app_recv_buffer_size = size;
+  int byte;
+
+  if (!app_send_buffer_free)
+    return;
+
+  while (uart_read_byte(&byte))
+  {
+    int state = (byte >> 8) & 0xff;
+
+    app_uart_timeout = app_system_time + UART_WAIT_TIMEOUT;
+    app_vcp_event = true;
+
+    if (state)
+    {
+      usb_cdc_set_state(state);
+    }
+    else
+    {
+      app_send_buffer[app_send_buffer_ptr++] = byte;
+
+      if (USB_BUFFER_SIZE == app_send_buffer_ptr)
+      {
+        send_buffer();
+        break;
+      }
+    }
+  }
 }
 
 //-----------------------------------------------------------------------------
-void usb_configuration_callback(int config)
+static void break_task(void)
 {
-  usb_cdc_recv(app_recv_buffer, sizeof(app_recv_buffer));
-  app_send_buffer_free = true;
-  (void)config;
+  if (app_break_timeout && app_system_time > app_break_timeout)
+  {
+    uart_set_break(false);
+    app_break_timeout = 0;
+  }
+}
+
+//-----------------------------------------------------------------------------
+static void uart_timer_task(void)
+{
+  if (app_uart_timeout && app_system_time > app_uart_timeout)
+  {
+    if (app_send_zlp || app_send_buffer_ptr)
+      send_buffer();
+
+    app_uart_timeout = 0;
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -232,62 +193,77 @@ void usb_cdc_line_coding_updated(usb_cdc_line_coding_t *line_coding)
 //-----------------------------------------------------------------------------
 void usb_cdc_control_line_state_update(int line_state)
 {
-  update_status(line_state & USB_CDC_CTRL_SIGNAL_DTE_PRESENT);
+  bool status = line_state & USB_CDC_CTRL_SIGNAL_DTE_PRESENT;
+
+  app_vcp_open        = status;
+  app_send_buffer_ptr = 0;
+  app_uart_timeout    = 0;
+  app_break_timeout   = 0;
+
+  if (app_vcp_open)
+    uart_init(usb_cdc_get_line_coding());
+  else
+    uart_close();
 }
 
 //-----------------------------------------------------------------------------
-static void tx_task(void)
+void usb_cdc_send_break(int duration)
 {
-  while (app_recv_buffer_size)
+  if (USB_CDC_BREAK_DURATION_DISABLE == duration)
   {
-    if (!uart_write_byte(app_recv_buffer[app_recv_buffer_ptr]))
-      break;
-
-    app_recv_buffer_ptr++;
-    app_recv_buffer_size--;
-
-    if (0 == app_recv_buffer_size)
-      usb_cdc_recv(app_recv_buffer, sizeof(app_recv_buffer));
+    app_break_timeout = 0;
+    uart_set_break(false);
+  }
+  else if (USB_CDC_BREAK_DURATION_INFINITE == duration)
+  {
+    app_break_timeout = 0;
+    uart_set_break(true);
+  }
+  else
+  {
+    app_break_timeout = app_system_time + duration;
+    uart_set_break(true);
   }
 }
 
 //-----------------------------------------------------------------------------
-static void rx_task(void)
+void usb_cdc_send_callback(void)
 {
-  int byte;
+  app_send_buffer_free = true;
+}
 
-  if (!app_send_buffer_free)
+//-----------------------------------------------------------------------------
+void usb_cdc_recv_callback(int size)
+{
+  app_recv_buffer_ptr = 0;
+  app_recv_buffer_size = size;
+}
+
+//-----------------------------------------------------------------------------
+void usb_configuration_callback(int config)
+{
+  usb_cdc_recv(app_recv_buffer, sizeof(app_recv_buffer));
+
+  app_send_buffer_free = true;
+  app_send_buffer_ptr = 0;
+
+  (void)config;
+}
+
+//-----------------------------------------------------------------------------
+static void status_timer_task(void)
+{
+  if (app_system_time < app_status_timeout)
     return;
 
-  while (uart_read_byte(&byte))
-  {
-    app_uart_timeout = get_system_time() + UART_WAIT_TIMEOUT;
-    app_send_buffer[app_send_buffer_ptr++] = byte;
+  app_status_timeout = app_system_time + STATUS_TIMEOUT;
 
-    if (USB_BUFFER_SIZE == app_send_buffer_ptr)
-    {
-      send_buffer();
-      break;
-    }
-  }
-}
+  if (app_vcp_event)
+    HAL_GPIO_VCP_STATUS_toggle();
+  else
+    HAL_GPIO_VCP_STATUS_write(app_vcp_open);
 
-//-----------------------------------------------------------------------------
-static void uart_timer_task(void)
-{
-  if (app_uart_timeout && get_system_time() > app_uart_timeout)
-  {
-    if (app_send_zlp || app_send_buffer_ptr)
-      send_buffer();
-
-    app_uart_timeout = 0;
-  }
-}
-
-//-----------------------------------------------------------------------------
-void uart_serial_state_update(int state)
-{
-  usb_cdc_set_state(state);
+  app_vcp_event = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -297,18 +273,30 @@ int main(void)
   sys_time_init();
   usb_init();
   usb_cdc_init();
-  set_status_state(false);
+  serial_number_init();
+
+  app_status_timeout = STATUS_TIMEOUT;
+
+  HAL_GPIO_VCP_STATUS_out();
+  HAL_GPIO_VCP_STATUS_clr();
+
+  HAL_GPIO_BOOT_ENTER_in();
+  HAL_GPIO_BOOT_ENTER_pullup();
+  HAL_GPIO_BOOT_ENTER_pmuxdis();
 
   while (1)
   {
     sys_time_task();
+    status_timer_task();
     usb_task();
     tx_task();
     rx_task();
+    break_task();
     uart_timer_task();
-    status_task();
+
+    if (0 == HAL_GPIO_BOOT_ENTER_read())
+      NVIC_SystemReset();
   }
 
   return 0;
 }
-

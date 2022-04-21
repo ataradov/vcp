@@ -1,41 +1,15 @@
-/*
- * Copyright (c) 2017, Alex Taradov <alex@taradov.com>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2017-2022, Alex Taradov <alex@taradov.com>. All rights reserved.
 
 #ifndef _USB_CDC_H_
 #define _USB_CDC_H_
 
 /*- Includes ----------------------------------------------------------------*/
-#include <stdint.h>
-#include <stdbool.h>
-#include "utils.h"
 #include "usb_std.h"
 
 /*- Definitions -------------------------------------------------------------*/
+#define USB_CDC_BCD_VERSION    0x0110
+
 enum
 {
   USB_CDC_SEND_ENCAPSULATED_COMMAND = 0x00,
@@ -105,6 +79,7 @@ enum
 
 enum
 {
+  USB_CDC_NO_SUBCLASS   = 0,
   USB_CDC_DLCM_SUBCLASS = 1, // Direct Line Control Model
   USB_CDC_ACM_SUBCLASS  = 2, // Abstract Control Model
   USB_CDC_TCM_SUBCLASS  = 3, // Telephone Control Model
@@ -164,8 +139,11 @@ enum
   USB_CDC_SERIAL_STATE_OVERRUN = (1 << 6),
 };
 
+#define USB_CDC_BREAK_DURATION_DISABLE   0
+#define USB_CDC_BREAK_DURATION_INFINITE  0xffff
+
 /*- Types -------------------------------------------------------------------*/
-typedef struct PACK
+typedef struct USB_PACK
 {
   uint8_t   bFunctionalLength;
   uint8_t   bDescriptorType;
@@ -173,7 +151,7 @@ typedef struct PACK
   uint16_t  bcdCDC;
 } usb_cdc_header_functional_descriptor_t;
 
-typedef struct PACK
+typedef struct USB_PACK
 {
   uint8_t   bFunctionalLength;
   uint8_t   bDescriptorType;
@@ -181,7 +159,7 @@ typedef struct PACK
   uint8_t   bmCapabilities;
 } usb_cdc_abstract_control_managment_descriptor_t;
 
-typedef struct PACK
+typedef struct USB_PACK
 {
   uint8_t   bFunctionalLength;
   uint8_t   bDescriptorType;
@@ -190,7 +168,7 @@ typedef struct PACK
   uint8_t   bDataInterface;
 } usb_cdc_call_managment_functional_descriptor_t;
 
-typedef struct PACK
+typedef struct USB_PACK
 {
   uint8_t   bFunctionalLength;
   uint8_t   bDescriptorType;
@@ -199,7 +177,7 @@ typedef struct PACK
   uint8_t   bSlaveInterface0;
 } usb_cdc_union_functional_descriptor_t;
 
-typedef struct PACK
+typedef struct USB_PACK
 {
   uint32_t  dwDTERate;
   uint8_t   bCharFormat;
@@ -207,7 +185,7 @@ typedef struct PACK
   uint8_t   bDataBits;
 } usb_cdc_line_coding_t;
 
-typedef struct PACK
+typedef struct USB_PACK
 {
   usb_request_t request;
   uint16_t      value;
@@ -215,15 +193,18 @@ typedef struct PACK
 
 /*- Prototypes --------------------------------------------------------------*/
 void usb_cdc_init(void);
+bool usb_cdc_handle_request(usb_request_t *request);
 void usb_cdc_send(uint8_t *data, int size);
 void usb_cdc_recv(uint8_t *data, int size);
 void usb_cdc_set_state(int mask);
 void usb_cdc_clear_state(int mask);
+usb_cdc_line_coding_t *usb_cdc_get_line_coding(void);
 
 void usb_cdc_send_callback(void);
 void usb_cdc_recv_callback(int size);
 void usb_cdc_line_coding_updated(usb_cdc_line_coding_t *line_coding);
 void usb_cdc_control_line_state_update(int line_state);
+void usb_cdc_send_break(int duration);
 
 #endif // _USB_CDC_H_
 
