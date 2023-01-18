@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Copyright (c) 2017-2022, Alex Taradov <alex@taradov.com>. All rights reserved.
+// Copyright (c) 2017-2023, Alex Taradov <alex@taradov.com>. All rights reserved.
 
 /*- Includes ----------------------------------------------------------------*/
 #include <stdio.h>
@@ -114,20 +114,42 @@ void uart_close(void)
 }
 
 //-----------------------------------------------------------------------------
+static bool fifo_push(volatile fifo_buffer_t *fifo, int value)
+{
+  int next_wr = (fifo->wr + 1) % UART_BUF_SIZE;
+
+  if (next_wr == fifo->rd)
+    return false;
+
+  fifo->data[fifo->wr] = value;
+  fifo->wr = next_wr;
+
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+static bool fifo_pop(volatile fifo_buffer_t *fifo, int *value)
+{
+  if (fifo->rd == fifo->wr)
+    return false;
+
+  *value = fifo->data[fifo->rd];
+  fifo->rd = (fifo->rd + 1) % UART_BUF_SIZE;
+
+  return true;
+}
+
+//-----------------------------------------------------------------------------
 bool uart_write_byte(int byte)
 {
-  int wr = (uart_tx_fifo.wr + 1) % UART_BUF_SIZE;
   bool res = false;
 
   NVIC_DisableIRQ(UART_SERCOM_IRQ_INDEX);
 
-  if (wr != uart_tx_fifo.rd)
+  if (fifo_push(&uart_tx_fifo, byte))
   {
-    uart_tx_fifo.data[uart_tx_fifo.wr] = byte;
-    uart_tx_fifo.wr = wr;
-    res = true;
-
     UART_SERCOM->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
+    res = true;
   }
 
   NVIC_EnableIRQ(UART_SERCOM_IRQ_INDEX);
@@ -148,10 +170,8 @@ bool uart_read_byte(int *byte)
     uart_fifo_overflow = false;
     res = true;
   }
-  else if (uart_rx_fifo.rd != uart_rx_fifo.wr)
+  else if (fifo_pop(&uart_rx_fifo, byte))
   {
-    *byte = uart_rx_fifo.data[uart_rx_fifo.rd];
-    uart_rx_fifo.rd = (uart_rx_fifo.rd + 1) % UART_BUF_SIZE;
     res = true;
   }
 
@@ -178,7 +198,6 @@ void UART_SERCOM_IRQ_HANDLER(void)
   {
     int status = UART_SERCOM->USART.STATUS.reg;
     int byte = UART_SERCOM->USART.DATA.reg;
-    int wr = (uart_rx_fifo.wr + 1) % UART_BUF_SIZE;
     int state = 0;
 
     UART_SERCOM->USART.STATUS.reg = status;
@@ -194,27 +213,18 @@ void UART_SERCOM_IRQ_HANDLER(void)
 
     byte |= (state << 8);
 
-    if (wr == uart_rx_fifo.rd)
-    {
+    if (!fifo_push(&uart_rx_fifo, byte))
       uart_fifo_overflow = true;
-    }
-    else
-    {
-      uart_rx_fifo.data[uart_rx_fifo.wr] = byte;
-      uart_rx_fifo.wr = wr;
-    }
   }
 
   if (flags & SERCOM_USART_INTFLAG_DRE)
   {
-    if (uart_tx_fifo.rd == uart_tx_fifo.wr)
-    {
-      UART_SERCOM->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
-    }
+    int byte;
+
+    if (fifo_pop(&uart_tx_fifo, &byte))
+      UART_SERCOM->USART.DATA.reg = byte;
     else
-    {
-      UART_SERCOM->USART.DATA.reg = uart_tx_fifo.data[uart_tx_fifo.rd];
-      uart_tx_fifo.rd = (uart_tx_fifo.rd + 1) % UART_BUF_SIZE;
-    }
+      UART_SERCOM->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
   }
 }
+
