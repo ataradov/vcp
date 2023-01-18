@@ -58,6 +58,6 @@ extern const usb_configuration_hierarchy_t usb_configuration_hierarchy;
 extern const usb_string_descriptor_zero_t usb_string_descriptor_zero;
 extern const char *usb_strings[];
 extern const usb_class_handler_t usb_class_handlers[1];
-extern char usb_serial_number[16];
+extern char usb_serial_number[8+1];
 
 #endif // _USB_DESCRIPTORS_H_

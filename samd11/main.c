@@ -83,7 +83,7 @@ static void serial_number_init(void)
   for (int i = 0; i < 8; i++)
     usb_serial_number[i] = "0123456789ABCDEF"[(sn >> (i * 4)) & 0xf];
 
-  usb_serial_number[8] = 0;
+//  usb_serial_number[8] = 0;	let do this magic to bss init code
 }
 
 //-----------------------------------------------------------------------------

@@ -160,4 +160,4 @@ const usb_class_handler_t usb_class_handlers[1] =
   usb_cdc_handle_request,
 };
 
-char usb_serial_number[16];
+char usb_serial_number[8+1] = {};
