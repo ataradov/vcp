@@ -38,8 +38,8 @@ static volatile UsbEpDesc *usb_ep_desc = (volatile UsbEpDesc *)USB_PMAADDR;
 static void (*usb_control_recv_callback)(uint8_t *data, int size);
 static int usb_pm_ptr;
 static int usb_setup_length;
-static uint8_t *usb_recv_buffer;
-static int usb_recv_size;
+static uint8_t *usb_recv_buffer[USB_EP_NUM];
+static int usb_recv_size[USB_EP_NUM];
 
 /*- Implementations ---------------------------------------------------------*/
 
@@ -156,8 +156,8 @@ void usb_send(int ep, uint8_t *data, int size)
 //-----------------------------------------------------------------------------
 void usb_recv(int ep, uint8_t *data, int size)
 {
-  usb_recv_buffer = data;
-  usb_recv_size   = size;
+  usb_recv_buffer[ep] = data;
+  usb_recv_size[ep]   = size;
 
   usb_set_rx_status(ep, USB_EP_RX_VALID);
 }
@@ -371,10 +371,10 @@ void usb_task(void)
       volatile uint8_t *rx_buf = USB_EP_MEM_RX(ep);
       int size = usb_ep_desc[ep].COUNT_RX & COUNT_RX_MASK;
 
-      size = USB_LIMIT(size, usb_recv_size);
+      size = USB_LIMIT(size, usb_recv_size[ep]);
 
       for (int i = 0; i < size; i++)
-        usb_recv_buffer[i] = rx_buf[i];
+        usb_recv_buffer[ep][i] = rx_buf[i];
 
       usb_recv_callback(ep, size);
     }
